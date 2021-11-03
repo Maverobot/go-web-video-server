@@ -47,11 +47,15 @@ func capture(ctx context.Context, wg *sync.WaitGroup, stream *mjpeg.Stream) {
 	}
 	defer webcam.Close()
 
+	var classifier_loaded bool
 	classifier := gocv.NewCascadeClassifier()
 	defer classifier.Close()
 	if !classifier.Load(*xml) {
-		log.Println("unable to load:", *xml)
-		return
+		log.Println("Unable to load: ", *xml)
+		log.Println("Face detection deactivated.")
+		classifier_loaded = false
+	} else {
+		classifier_loaded = true
 	}
 
 	im := gocv.NewMat()
@@ -65,23 +69,25 @@ func capture(ctx context.Context, wg *sync.WaitGroup, stream *mjpeg.Stream) {
 				continue
 			}
 
-			rects := classifier.DetectMultiScale(im)
+			if classifier_loaded {
+				rects := classifier.DetectMultiScale(im)
 
-			if len(rects) > 0 {
-				if len(*message) > 0 && limiter.Allow() {
-					println(*message)
-					cmd := exec.Command("spd-say", "-r -30", *message)
-					if err := cmd.Run(); err != nil {
-						log.Fatal(err)
+				if len(rects) > 0 {
+					if len(*message) > 0 && limiter.Allow() {
+						println(*message)
+						cmd := exec.Command("spd-say", "-r -30", *message)
+						if err := cmd.Run(); err != nil {
+							log.Fatal(err)
+						}
 					}
 				}
-			}
 
-			if *show_faces {
-				for _, r := range rects {
-					face := im.Region(r)
-					face.Close()
-					gocv.Rectangle(&im, r, color.RGBA{0, 0, 255, 0}, 2)
+				if *show_faces {
+					for _, r := range rects {
+						face := im.Region(r)
+						face.Close()
+						gocv.Rectangle(&im, r, color.RGBA{0, 0, 255, 0}, 2)
+					}
 				}
 			}
 
