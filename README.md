@@ -13,5 +13,5 @@
 2. Install `go-web-video-server`
 
     ```sh
-    go get -v github.com/Maverobot/go-web-video-server
+    go get -v github.com/maverobot/go-web-video-server
     ```
