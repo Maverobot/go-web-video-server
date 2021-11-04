@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"image/color"
 	"log"
 	"net/http"
@@ -35,14 +34,14 @@ func capture(ctx context.Context, wg *sync.WaitGroup, stream *mjpeg.Stream) {
 	defer wg.Done()
 
 	var webcam *gocv.VideoCapture
-	var err error
+	var capture_err error
 	if id, err := strconv.ParseInt(*camera, 10, 64); err == nil {
-		webcam, err = gocv.VideoCaptureDevice(int(id))
+		webcam, capture_err = gocv.VideoCaptureDevice(int(id))
 	} else {
-		webcam, err = gocv.VideoCaptureFile(*camera)
+		webcam, capture_err = gocv.VideoCaptureFile(*camera)
 	}
-	if err != nil {
-		log.Println("unable to init web cam: %v", err)
+	if capture_err != nil {
+		log.Printf("[ERROR]: Unable to init web cam: '%v'", capture_err)
 		return
 	}
 	defer webcam.Close()
@@ -51,8 +50,7 @@ func capture(ctx context.Context, wg *sync.WaitGroup, stream *mjpeg.Stream) {
 	classifier := gocv.NewCascadeClassifier()
 	defer classifier.Close()
 	if !classifier.Load(*xml) {
-		log.Println("Unable to load: ", *xml)
-		log.Println("Face detection deactivated.")
+		log.Printf("[WARN]: Unable to load: %s. Face detection deactivated.", *xml)
 		classifier_loaded = false
 	} else {
 		classifier_loaded = true
@@ -97,7 +95,7 @@ func capture(ctx context.Context, wg *sync.WaitGroup, stream *mjpeg.Stream) {
 			}
 			buf = nbuf.GetBytes()
 		}
-		err = stream.Update(buf)
+		err := stream.Update(buf)
 		if err != nil {
 			break
 		}
@@ -118,7 +116,9 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(`<img src="/mjpeg" style="height: 100%;"/>`))
+		if _, err := w.Write([]byte(`<img src="/mjpeg" style="height: 100%;"/>`)); err != nil {
+			log.Println("[ERROR]: Failed to write into the HTTP response.")
+		}
 	})
 
 	server := &http.Server{Addr: ":" + strconv.Itoa(*port)}
@@ -126,10 +126,14 @@ func main() {
 	signal.Notify(sc, os.Interrupt)
 	go func() {
 		<-sc
-		server.Shutdown(ctx)
+		if err := server.Shutdown(ctx); err != nil {
+			log.Printf("[DEBUG]: HTTP server '%v'.", err)
+		}
 	}()
-	fmt.Printf("Serving the camera stream at: http://0.0.0.0:%d\n", *port)
-	server.ListenAndServe()
+	log.Printf("[INFO]: Serving the camera stream at: http://0.0.0.0:%d", *port)
+	if err := server.ListenAndServe(); err != nil {
+		log.Printf("[DEBUG]: HTTP server '%v'.", err)
+	}
 	stream.Close()
 	cancel()
 
