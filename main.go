@@ -15,7 +15,9 @@ import (
 	"sync"
 	"time"
 
+	auth "github.com/abbot/go-http-auth"
 	"github.com/mattn/go-mjpeg"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/time/rate"
 
 	"gocv.io/x/gocv"
@@ -26,8 +28,9 @@ var (
 	port       = flag.Int("port", 8080, "Server port")
 	xml        = flag.String("classifier", "haarcascade_frontalface_default.xml", "classifier XML file")
 	message    = flag.String("message", "", "The message to say if there are human faces detected.")
-	show_faces = flag.Bool("show-faces", false, "Show the locations of detected face in the image stream")
+	show_faces = flag.Bool("show-faces", false, "Show the locations of detected face in the image stream.")
 	interval   = flag.Duration("interval", 30*time.Millisecond, "interval")
+	password   = flag.String("password", "", "The password to be used to access the HTTP video stream. ")
 )
 
 func capture(ctx context.Context, wg *sync.WaitGroup, stream *mjpeg.Stream) {
@@ -102,8 +105,26 @@ func capture(ctx context.Context, wg *sync.WaitGroup, stream *mjpeg.Stream) {
 	}
 }
 
+func handle(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	if _, err := w.Write([]byte(`<img src="/mjpeg" style="height: 100%;"/>`)); err != nil {
+		log.Println("[ERROR]: Failed to write into the HTTP response.")
+	}
+}
+
 func main() {
 	flag.Parse()
+
+	var secret = func(user, realm string) string {
+		if user == "go" {
+			hashedPassword, err := bcrypt.GenerateFromPassword([]byte(*password), bcrypt.DefaultCost)
+			if err == nil {
+				return string(hashedPassword)
+			}
+		}
+		return ""
+	}
+	authenticator := auth.NewBasicAuthenticator("go_web_video_server.com", secret)
 
 	stream := mjpeg.NewStreamWithInterval(*interval)
 
@@ -112,14 +133,14 @@ func main() {
 	wg.Add(1)
 	go capture(ctx, &wg, stream)
 
-	http.HandleFunc("/mjpeg", stream.ServeHTTP)
+	if len(*password) > 0 {
+		log.Printf("[INFO]: Website username <go>, password <%s>", *password)
+		http.HandleFunc("/", auth.JustCheck(authenticator, handle))
+	} else {
+		http.HandleFunc("/", handle)
+	}
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		if _, err := w.Write([]byte(`<img src="/mjpeg" style="height: 100%;"/>`)); err != nil {
-			log.Println("[ERROR]: Failed to write into the HTTP response.")
-		}
-	})
+	http.HandleFunc("/mjpeg", stream.ServeHTTP)
 
 	server := &http.Server{Addr: ":" + strconv.Itoa(*port)}
 	sc := make(chan os.Signal, 1)
