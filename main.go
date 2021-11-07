@@ -107,7 +107,7 @@ func capture(ctx context.Context, wg *sync.WaitGroup, stream *mjpeg.Stream) {
 
 func handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
-	if _, err := w.Write([]byte(`<img src="/mjpeg" style="height: 100%;"/>`)); err != nil {
+	if _, err := w.Write([]byte(`<title>Web Video Server</title><img src="/mjpeg" style="height: 100%;"/>`)); err != nil {
 		log.Println("[ERROR]: Failed to write into the HTTP response.")
 	}
 }
